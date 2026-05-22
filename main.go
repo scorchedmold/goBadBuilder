@@ -667,6 +667,7 @@ func (a *app) installABadAvatar(targetRoot string) error {
 	payloadSource := filepath.Join(root, "BadUpdatePayload")
 	contentSource := filepath.Join(root, "Content")
 	payloadDest := filepath.Join(targetRoot, "BadUpdatePayload")
+	contentDest := filepath.Join(targetRoot, "Content")
 	titleDest := filepath.Join(targetRoot, filepath.FromSlash(contentFolder), "5841122D")
 
 	fmt.Println("Applying ABadAvatar files...")
@@ -679,7 +680,7 @@ func (a *app) installABadAvatar(targetRoot string) error {
 	if err := os.RemoveAll(titleDest); err != nil {
 		return err
 	}
-	return mirrorDir(contentSource, targetRoot)
+	return mirrorDir(contentSource, contentDest)
 }
 
 func (a *app) findExtractedRoot(name string) (string, error) {
