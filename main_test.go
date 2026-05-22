@@ -32,6 +32,51 @@ func TestInstallABadAvatarMergesContentUnderContentFolder(t *testing.T) {
 	assertFileMissing(t, filepath.Join(targetRoot, "E0002FF78DFBDE7B", "profile.bin"))
 }
 
+func TestAuroraLaunchPathFindsAuroraUnderApps(t *testing.T) {
+	targetRoot := t.TempDir()
+	writeTestFile(t, filepath.Join(targetRoot, "Apps", "Aurora", "Aurora.xex"), "aurora")
+
+	path, err := auroraLaunchPath(targetRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != `Usb:\Apps\Aurora\Aurora.xex` {
+		t.Fatalf("unexpected Aurora path: %q", path)
+	}
+}
+
+func TestUpdateLaunchINIWritesDashLaunchSettings(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "launch.ini")
+	if err := os.WriteFile(path, []byte("[Paths]\nDefault = Usb:\\Old\\default.xex\n[Settings]\ncontpatch = false\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	err := updateLaunchINI(path, launchINISettings{
+		AuroraPath: `Usb:\Apps\Aurora\Aurora.xex`,
+		ContPatch:  true,
+		XBLAPatch:  true,
+		LicPatch:   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expected := "[Paths]\n" +
+		"Default = Usb:\\Apps\\Aurora\\Aurora.xex\n" +
+		"[Settings]\n" +
+		"contpatch = true\n" +
+		"xblapatch = true\n" +
+		"licpatch = true\n"
+	if string(contents) != expected {
+		t.Fatalf("unexpected launch.ini contents:\n%s", contents)
+	}
+}
+
 func writeTestFile(t *testing.T, path string, contents string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {

@@ -80,9 +80,12 @@ Valid install modes are `ABadUpdate` and `ABadAvatar`.
 5. Copy the BadUpdate files to the USB root.
 6. If selected, apply the ABadAvatar payload and content overlay.
 7. Optionally copy homebrew apps into `Apps/`.
-8. Patch copied `.xex` files with XexTool.
+8. Update `launch.ini` for Aurora and content patch settings.
+9. Patch copied `.xex` files with XexTool.
 
 goBadBuilder writes `name.txt` and `info.txt` to the USB root so you can confirm what was created.
+
+If `Aurora.xex` is found under `Apps/`, goBadBuilder sets the DashLaunch default path to its USB path, such as `Usb:\Apps\Aurora\Aurora.xex`. It also prompts for `contpatch`, `xblapatch`, and `licpatch`, which help DLC, XBLA, and extra content work.
 
 ## Notes
 

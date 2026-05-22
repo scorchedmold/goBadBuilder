@@ -58,6 +58,13 @@ type homebrewApp struct {
 	EntryPoint string
 }
 
+type launchINISettings struct {
+	AuroraPath string
+	ContPatch  bool
+	XBLAPatch  bool
+	LicPatch   bool
+}
+
 type release struct {
 	Assets []releaseAsset `json:"assets"`
 }
@@ -168,6 +175,10 @@ func (a *app) run(targetFlag string, defaultAppFlag string, modeFlag string) err
 			homebrewCount += len(homebrewApps)
 			fmt.Printf("Added %d homebrew app(s).\n", len(homebrewApps))
 		}
+	}
+
+	if err := a.configureLaunchINI(targetRoot); err != nil {
+		return err
 	}
 
 	if err := appendInfo(targetRoot, fmt.Sprintf("-  %d homebrew app(s) added (including Simple 360 NAND Flasher)\n", homebrewCount)); err != nil {
@@ -860,6 +871,150 @@ func (a *app) copyHomebrew(targetRoot string, apps []homebrewApp) error {
 		}
 	}
 	return nil
+}
+
+func (a *app) configureLaunchINI(targetRoot string) error {
+	auroraPath, err := auroraLaunchPath(targetRoot)
+	if err != nil {
+		return err
+	}
+
+	if auroraPath == "" {
+		fmt.Println("Aurora.xex was not found under Apps; launch.ini default path was not changed.")
+	}
+
+	fmt.Println("DLC, XBLA, and extra content usually need these launch.ini patch settings enabled.")
+	contPatch, err := a.askYesNo("Enable contpatch for add-on content? (recommended)", true)
+	if err != nil {
+		return err
+	}
+	xblaPatch, err := a.askYesNo("Enable xblapatch for XBLA content? (recommended)", true)
+	if err != nil {
+		return err
+	}
+	licPatch, err := a.askYesNo("Enable licpatch for content licenses? (recommended)", true)
+	if err != nil {
+		return err
+	}
+
+	return updateLaunchINI(filepath.Join(targetRoot, "launch.ini"), launchINISettings{
+		AuroraPath: auroraPath,
+		ContPatch:  contPatch,
+		XBLAPatch:  xblaPatch,
+		LicPatch:   licPatch,
+	})
+}
+
+func auroraLaunchPath(targetRoot string) (string, error) {
+	appsRoot := filepath.Join(targetRoot, "Apps")
+	if !dirExists(appsRoot) {
+		return "", nil
+	}
+
+	var auroraPath string
+	err := filepath.WalkDir(appsRoot, func(path string, dirEntry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if dirEntry.IsDir() {
+			return nil
+		}
+		if !strings.EqualFold(dirEntry.Name(), "Aurora.xex") {
+			return nil
+		}
+		relativePath, err := filepath.Rel(appsRoot, path)
+		if err != nil {
+			return err
+		}
+		auroraPath = "Usb:\\Apps\\" + strings.ReplaceAll(relativePath, string(filepath.Separator), "\\")
+		return filepath.SkipAll
+	})
+	return auroraPath, err
+}
+
+func updateLaunchINI(path string, settings launchINISettings) error {
+	var lines []string
+	if contents, err := os.ReadFile(path); err == nil {
+		lines = strings.Split(strings.ReplaceAll(string(contents), "\r\n", "\n"), "\n")
+		if len(lines) > 0 && lines[len(lines)-1] == "" {
+			lines = lines[:len(lines)-1]
+		}
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+
+	if settings.AuroraPath != "" {
+		lines = upsertINIValue(lines, "Paths", "Default", settings.AuroraPath)
+	}
+	lines = upsertINIValue(lines, "Settings", "contpatch", boolINI(settings.ContPatch))
+	lines = upsertINIValue(lines, "Settings", "xblapatch", boolINI(settings.XBLAPatch))
+	lines = upsertINIValue(lines, "Settings", "licpatch", boolINI(settings.LicPatch))
+
+	output := strings.Join(lines, "\n")
+	if output != "" {
+		output += "\n"
+	}
+	return writeTextFile(path, output)
+}
+
+func upsertINIValue(lines []string, section string, key string, value string) []string {
+	sectionHeader := "[" + section + "]"
+	inSection := false
+	sectionStart := -1
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.EqualFold(trimmed, sectionHeader) {
+			inSection = true
+			sectionStart = i
+			continue
+		}
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			if inSection {
+				return insertLine(lines, i, key+" = "+value)
+			}
+			inSection = false
+			continue
+		}
+		if inSection && iniKeyMatches(line, key) {
+			lines[i] = key + " = " + value
+			return lines
+		}
+	}
+
+	if inSection {
+		return append(lines, key+" = "+value)
+	}
+	if len(lines) > 0 && strings.TrimSpace(lines[len(lines)-1]) != "" {
+		lines = append(lines, "")
+	}
+	if sectionStart == -1 {
+		lines = append(lines, sectionHeader)
+	}
+	return append(lines, key+" = "+value)
+}
+
+func insertLine(lines []string, index int, line string) []string {
+	lines = append(lines, "")
+	copy(lines[index+1:], lines[index:])
+	lines[index] = line
+	return lines
+}
+
+func iniKeyMatches(line string, key string) bool {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, ";") || strings.HasPrefix(trimmed, "#") {
+		return false
+	}
+	name, _, found := strings.Cut(trimmed, "=")
+	return found && strings.EqualFold(strings.TrimSpace(name), key)
+}
+
+func boolINI(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
 }
 
 func (a *app) patchXex(xexPath string, xexToolPath string) error {
