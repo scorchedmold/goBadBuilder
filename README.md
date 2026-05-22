@@ -33,19 +33,43 @@ Interactive mode:
 ./gobadbuilder
 ```
 
+```powershell
+.\gobadbuilder.exe
+```
+
 With a known USB root:
 
 ```sh
 ./gobadbuilder --target /Volumes/BADUPDATE
 ```
 
+```powershell
+.\gobadbuilder.exe --target D:\
+```
+
 With a chosen default payload:
 
 ```sh
-./gobadbuilder --target /Volumes/BADUPDATE --default-app FreeMyXe
+./gobadbuilder --target /Volumes/BADUPDATE --default-app XeUnshackle
+```
+
+```powershell
+.\gobadbuilder.exe --target D:\ --default-app XeUnshackle
 ```
 
 Valid default payloads are `FreeMyXe` and `XeUnshackle`.
+
+With the ABadAvatar layout:
+
+```sh
+./gobadbuilder --target /Volumes/BADUPDATE --default-app XeUnshackle --mode ABadAvatar
+```
+
+```powershell
+.\gobadbuilder.exe --target D:\ --default-app XeUnshackle --mode ABadAvatar
+```
+
+Valid install modes are `ABadUpdate` and `ABadAvatar`.
 
 ## Workflow
 
@@ -54,8 +78,9 @@ Valid default payloads are `FreeMyXe` and `XeUnshackle`.
 3. Download or reuse required archives.
 4. Extract archives into `Work/Extract`.
 5. Copy the BadUpdate files to the USB root.
-6. Optionally copy homebrew apps into `Apps/`.
-7. Patch copied `.xex` files with XexTool.
+6. If selected, apply the ABadAvatar payload and content overlay.
+7. Optionally copy homebrew apps into `Apps/`.
+8. Patch copied `.xex` files with XexTool.
 
 goBadBuilder writes `name.txt` and `info.txt` to the USB root so you can confirm what was created.
 

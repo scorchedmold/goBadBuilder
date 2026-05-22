@@ -28,6 +28,8 @@ const (
 	extractDirName   = "Extract"
 	contentFolder    = "Content/0000000000000000"
 	defaultUserAgent = "goBadBuilder"
+	modeABadUpdate   = "ABadUpdate"
+	modeABadAvatar   = "ABadAvatar"
 )
 
 type app struct {
@@ -69,10 +71,12 @@ func main() {
 	var workDirFlag string
 	var targetFlag string
 	var defaultAppFlag string
+	var modeFlag string
 
 	flag.StringVar(&workDirFlag, "work-dir", workDirName, "working directory for downloads and extracted files")
 	flag.StringVar(&targetFlag, "target", "", "USB root path to write to")
 	flag.StringVar(&defaultAppFlag, "default-app", "", "BadUpdate payload to launch: FreeMyXe or XeUnshackle")
+	flag.StringVar(&modeFlag, "mode", "", "install mode: ABadUpdate or ABadAvatar")
 	flag.Parse()
 
 	absWorkDir, err := filepath.Abs(workDirFlag)
@@ -88,7 +92,7 @@ func main() {
 		extractDir:  filepath.Join(absWorkDir, extractDirName),
 	}
 
-	if err := a.run(targetFlag, defaultAppFlag); err != nil {
+	if err := a.run(targetFlag, defaultAppFlag, modeFlag); err != nil {
 		exitErr(err)
 	}
 }
@@ -98,7 +102,7 @@ func exitErr(err error) {
 	os.Exit(1)
 }
 
-func (a *app) run(targetFlag string, defaultAppFlag string) error {
+func (a *app) run(targetFlag string, defaultAppFlag string, modeFlag string) error {
 	printBanner()
 
 	fmt.Println("This Go version does not format drives.")
@@ -115,6 +119,11 @@ func (a *app) run(targetFlag string, defaultAppFlag string) error {
 		return err
 	}
 
+	mode, err := a.installMode(modeFlag)
+	if err != nil {
+		return err
+	}
+
 	if err := os.MkdirAll(a.downloadDir, 0755); err != nil {
 		return err
 	}
@@ -124,7 +133,7 @@ func (a *app) run(targetFlag string, defaultAppFlag string) error {
 
 	fmt.Println()
 	fmt.Println("Checking required release assets...")
-	items, err := a.requiredDownloads(context.Background())
+	items, err := a.requiredDownloads(context.Background(), mode)
 	if err != nil {
 		return err
 	}
@@ -138,7 +147,7 @@ func (a *app) run(targetFlag string, defaultAppFlag string) error {
 		return err
 	}
 
-	if err := a.prepareUSB(targetRoot, defaultApp); err != nil {
+	if err := a.prepareUSB(targetRoot, defaultApp, mode); err != nil {
 		return err
 	}
 
@@ -224,18 +233,43 @@ func (a *app) defaultApp(defaultAppFlag string) (string, error) {
 		return "", fmt.Errorf("unknown default app %q", choice)
 	}
 
-	selected, err := a.choose("Which program should BadUpdate launch?", []string{"FreeMyXe", "XeUnshackle"})
+	selected, err := a.choose("Which program should BadUpdate launch?", []string{"XeUnshackle (recommended)", "FreeMyXe"})
 	if err != nil {
 		return "", err
 	}
-	return selected, nil
+	return strings.TrimSuffix(selected, " (recommended)"), nil
 }
 
-func (a *app) requiredDownloads(ctx context.Context) ([]downloadItem, error) {
+func (a *app) installMode(modeFlag string) (string, error) {
+	choice := strings.TrimSpace(modeFlag)
+	switch strings.ToLower(choice) {
+	case "":
+	case strings.ToLower(modeABadUpdate):
+		return modeABadUpdate, nil
+	case strings.ToLower(modeABadAvatar):
+		return modeABadAvatar, nil
+	default:
+		return "", fmt.Errorf("unknown install mode %q", choice)
+	}
+
+	selected, err := a.choose("Which install mode should be created?", []string{modeABadAvatar + " (recommended)", modeABadUpdate})
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSuffix(selected, " (recommended)"), nil
+}
+
+func (a *app) requiredDownloads(ctx context.Context, mode string) ([]downloadItem, error) {
 	items := []downloadItem{
 		{Name: "XeXmenu", URL: "https://github.com/Pdawg-bytes/BadBuilder/releases/download/v0.10a/MenuData.7z"},
 		{Name: "Rock Band Blitz", URL: "https://github.com/Pdawg-bytes/BadBuilder/releases/download/v0.10a/GameData.zip"},
 		{Name: "Simple 360 NAND Flasher", URL: "https://github.com/Pdawg-bytes/BadBuilder/releases/download/v0.10a/Flasher.7z"},
+	}
+	if mode == modeABadAvatar {
+		items = append(items, downloadItem{
+			Name: "ABadAvatar",
+			URL:  "https://github.com/shutterbug2000/ABadAvatar/releases/download/vPB1.0/ABadAvatar-publicbeta1.0.zip",
+		})
 	}
 
 	repos := []string{
@@ -567,7 +601,7 @@ func archiveFileMode(mode os.FileMode) os.FileMode {
 	return mode
 }
 
-func (a *app) prepareUSB(targetRoot string, defaultApp string) error {
+func (a *app) prepareUSB(targetRoot string, defaultApp string, mode string) error {
 	xexToolPath := filepath.Join(a.extractDir, "BadUpdate Tools", "XePatcher", "XexTool.exe")
 	if !fileExists(xexToolPath) {
 		return fmt.Errorf("XexTool was not found at %s", xexToolPath)
@@ -582,6 +616,7 @@ func (a *app) prepareUSB(targetRoot string, defaultApp string) error {
 	info := "This drive was created with goBadBuilder.\n" +
 		"Find more info here: https://github.com/Pdawg-bytes/BadBuilder\n" +
 		"Configuration:\n" +
+		fmt.Sprintf("-  Install mode: %s\n", mode) +
 		fmt.Sprintf("-  BadUpdate target binary: %s\n", defaultApp) +
 		"-  Disk formatted manually before running goBadBuilder\n"
 	if err := writeTextFile(filepath.Join(targetRoot, "info.txt"), info); err != nil {
@@ -614,7 +649,55 @@ func (a *app) prepareUSB(targetRoot string, defaultApp string) error {
 		return err
 	}
 
+	if mode == modeABadAvatar {
+		if err := a.installABadAvatar(targetRoot); err != nil {
+			return err
+		}
+	}
+
 	return a.installSimpleNAND(targetRoot, xexToolPath)
+}
+
+func (a *app) installABadAvatar(targetRoot string) error {
+	root, err := a.findExtractedRoot("ABadAvatar")
+	if err != nil {
+		return err
+	}
+
+	payloadSource := filepath.Join(root, "BadUpdatePayload")
+	contentSource := filepath.Join(root, "Content")
+	payloadDest := filepath.Join(targetRoot, "BadUpdatePayload")
+	titleDest := filepath.Join(targetRoot, filepath.FromSlash(contentFolder), "5841122D")
+
+	fmt.Println("Applying ABadAvatar files...")
+	if err := removeChildrenExcept(payloadDest, []string{"default.xex", "BadStorage.xex.dll"}); err != nil {
+		return err
+	}
+	if err := mirrorDir(payloadSource, payloadDest); err != nil {
+		return err
+	}
+	if err := os.RemoveAll(titleDest); err != nil {
+		return err
+	}
+	return mirrorDir(contentSource, targetRoot)
+}
+
+func (a *app) findExtractedRoot(name string) (string, error) {
+	root := filepath.Join(a.extractDir, name)
+	if dirExists(filepath.Join(root, "BadUpdatePayload")) && dirExists(filepath.Join(root, "Content")) {
+		return root, nil
+	}
+
+	dirs, err := immediateDirs(root)
+	if err != nil {
+		return "", err
+	}
+	for _, dir := range dirs {
+		if dirExists(filepath.Join(dir, "BadUpdatePayload")) && dirExists(filepath.Join(dir, "Content")) {
+			return dir, nil
+		}
+	}
+	return "", fmt.Errorf("%s extraction did not contain BadUpdatePayload and Content folders", name)
 }
 
 func (a *app) installSimpleNAND(targetRoot string, xexToolPath string) error {
@@ -816,6 +899,22 @@ func (a *app) patchXex(xexPath string, xexToolPath string) error {
 
 func mirrorDir(sourceDir string, destDir string) error {
 	return mirrorDirWithSkip(sourceDir, destDir, nil)
+}
+
+func removeChildrenExcept(root string, keepNames []string) error {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if nameInList(entry.Name(), keepNames) {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(root, entry.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func mirrorDirWithSkip(sourceDir string, destDir string, skip func(string) bool) error {
@@ -1044,6 +1143,20 @@ func cleanInputPath(path string) string {
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+func nameInList(name string, names []string) bool {
+	for _, candidate := range names {
+		if strings.EqualFold(name, candidate) {
+			return true
+		}
+	}
+	return false
 }
 
 func isPathInside(root string, path string) bool {
