@@ -12,9 +12,10 @@ Format the USB drive yourself first, then point goBadBuilder at the mounted USB 
 
 ## Requirements
 
-- Go 1.22 or newer to build from source
-- `7zz`, `7z`, or `7za` on your `PATH` for `.7z` extraction
+- Go 1.25 or newer to build from source
 - Windows, or Wine on macOS/Linux, for XexTool patching
+
+`.7z` extraction is handled in-process; users do not need a separate 7-Zip installation.
 
 The downloaded BadUpdate tools include `XexTool.exe`. On Windows it runs directly. On macOS/Linux, goBadBuilder will use `wine` if it is installed.
 

@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/bodgit/sevenzip"
 )
 
 const (
@@ -486,7 +488,7 @@ func extractZip(path string, dest string) error {
 		}
 
 		if file.FileInfo().IsDir() {
-			if err := os.MkdirAll(targetPath, file.Mode()); err != nil {
+			if err := os.MkdirAll(targetPath, archiveDirMode(file.Mode())); err != nil {
 				return err
 			}
 			continue
@@ -499,7 +501,7 @@ func extractZip(path string, dest string) error {
 		if err != nil {
 			return err
 		}
-		if err := copyReaderToFile(src, targetPath, file.Mode()); err != nil {
+		if err := copyReaderToFile(src, targetPath, archiveFileMode(file.Mode())); err != nil {
 			src.Close()
 			return err
 		}
@@ -511,25 +513,58 @@ func extractZip(path string, dest string) error {
 }
 
 func extract7z(path string, dest string) error {
-	extractor, err := findExecutable("7zz", "7z", "7za")
+	reader, err := sevenzip.OpenReader(path)
 	if err != nil {
-		return errors.New("7z extraction requires 7zz, 7z, or 7za to be installed and available on PATH")
+		return err
+	}
+	defer reader.Close()
+
+	cleanDest, err := filepath.Abs(dest)
+	if err != nil {
+		return err
 	}
 
-	cmd := exec.Command(extractor, "x", "-y", "-o"+dest, path)
-	cmd.Stdout = io.Discard
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
-}
+	for _, file := range reader.File {
+		entryName := filepath.FromSlash(strings.ReplaceAll(file.Name, "\\", "/"))
+		targetPath := filepath.Join(cleanDest, entryName)
+		if !isPathInside(cleanDest, targetPath) {
+			return fmt.Errorf("archive entry escapes destination: %s", file.Name)
+		}
 
-func findExecutable(names ...string) (string, error) {
-	for _, name := range names {
-		path, err := exec.LookPath(name)
-		if err == nil {
-			return path, nil
+		if file.FileInfo().IsDir() {
+			if err := os.MkdirAll(targetPath, archiveDirMode(file.Mode())); err != nil {
+				return err
+			}
+			continue
+		}
+
+		src, err := file.Open()
+		if err != nil {
+			return err
+		}
+		if err := copyReaderToFile(src, targetPath, archiveFileMode(file.Mode())); err != nil {
+			src.Close()
+			return err
+		}
+		if err := src.Close(); err != nil {
+			return err
 		}
 	}
-	return "", errors.New("executable not found")
+	return nil
+}
+
+func archiveDirMode(mode os.FileMode) os.FileMode {
+	if mode.Perm() == 0 {
+		return 0755
+	}
+	return mode
+}
+
+func archiveFileMode(mode os.FileMode) os.FileMode {
+	if mode.Perm() == 0 {
+		return 0644
+	}
+	return mode
 }
 
 func (a *app) prepareUSB(targetRoot string, defaultApp string) error {
