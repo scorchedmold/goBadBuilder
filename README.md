@@ -71,6 +71,16 @@ With the ABadAvatar layout:
 
 Valid install modes are `ABadUpdate` and `ABadAvatar`.
 
+To reduce interactive prompts, use `-r` for recommended choices and `-y` to accept archive downloads or reuse existing archives:
+
+```sh
+./gobadbuilder --target /Volumes/BADUPDATE -r -y
+```
+
+```powershell
+.\gobadbuilder.exe --target D:\ -r -y
+```
+
 ## Workflow
 
 1. Confirm the mounted USB root directory.

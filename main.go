@@ -40,6 +40,8 @@ type app struct {
 	extractDir        string
 	skipPatchingKnown bool
 	skipPatching      bool
+	acceptDownloads   bool
+	useRecommended    bool
 }
 
 type downloadItem struct {
@@ -79,11 +81,15 @@ func main() {
 	var targetFlag string
 	var defaultAppFlag string
 	var modeFlag string
+	var acceptDownloadsFlag bool
+	var recommendedFlag bool
 
 	flag.StringVar(&workDirFlag, "work-dir", workDirName, "working directory for downloads and extracted files")
 	flag.StringVar(&targetFlag, "target", "", "USB root path to write to")
 	flag.StringVar(&defaultAppFlag, "default-app", "", "BadUpdate payload to launch: FreeMyXe or XeUnshackle")
 	flag.StringVar(&modeFlag, "mode", "", "install mode: ABadUpdate or ABadAvatar")
+	flag.BoolVar(&acceptDownloadsFlag, "y", false, "accept all download and existing archive prompts")
+	flag.BoolVar(&recommendedFlag, "r", false, "choose recommended options when available")
 	flag.Parse()
 
 	absWorkDir, err := filepath.Abs(workDirFlag)
@@ -92,11 +98,13 @@ func main() {
 	}
 
 	a := &app{
-		in:          bufio.NewReader(os.Stdin),
-		httpClient:  &http.Client{Timeout: 30 * time.Minute},
-		workDir:     absWorkDir,
-		downloadDir: filepath.Join(absWorkDir, downloadDirName),
-		extractDir:  filepath.Join(absWorkDir, extractDirName),
+		in:              bufio.NewReader(os.Stdin),
+		httpClient:      &http.Client{Timeout: 30 * time.Minute},
+		workDir:         absWorkDir,
+		downloadDir:     filepath.Join(absWorkDir, downloadDirName),
+		extractDir:      filepath.Join(absWorkDir, extractDirName),
+		acceptDownloads: acceptDownloadsFlag,
+		useRecommended:  recommendedFlag,
 	}
 
 	if err := a.run(targetFlag, defaultAppFlag, modeFlag); err != nil {
@@ -243,6 +251,10 @@ func (a *app) defaultApp(defaultAppFlag string) (string, error) {
 	default:
 		return "", fmt.Errorf("unknown default app %q", choice)
 	}
+	if a.useRecommended {
+		fmt.Println("Using recommended default app: XeUnshackle")
+		return "XeUnshackle", nil
+	}
 
 	selected, err := a.choose("Which program should BadUpdate launch?", []string{"XeUnshackle (recommended)", "FreeMyXe"})
 	if err != nil {
@@ -261,6 +273,10 @@ func (a *app) installMode(modeFlag string) (string, error) {
 		return modeABadAvatar, nil
 	default:
 		return "", fmt.Errorf("unknown install mode %q", choice)
+	}
+	if a.useRecommended {
+		fmt.Printf("Using recommended install mode: %s\n", modeABadAvatar)
+		return modeABadAvatar, nil
 	}
 
 	selected, err := a.choose("Which install mode should be created?", []string{modeABadAvatar + " (recommended)", modeABadUpdate})
@@ -363,6 +379,11 @@ func (a *app) prepareArchives(ctx context.Context, items []downloadItem) ([]arch
 		dest := filepath.Join(a.downloadDir, filename)
 
 		if fileExists(dest) {
+			if a.acceptDownloads {
+				fmt.Printf("Using existing %s archive at %s\n", item.Name, dest)
+				archives = append(archives, archiveItem{Name: item.Name, Path: dest})
+				continue
+			}
 			useExisting, err := a.askYesNo(fmt.Sprintf("Use existing %s archive at %s?", item.Name, dest), true)
 			if err != nil {
 				return nil, err
@@ -373,6 +394,13 @@ func (a *app) prepareArchives(ctx context.Context, items []downloadItem) ([]arch
 			}
 		}
 
+		if a.acceptDownloads {
+			if err := a.downloadFile(ctx, item.URL, dest); err != nil {
+				return nil, err
+			}
+			archives = append(archives, archiveItem{Name: item.Name, Path: dest})
+			continue
+		}
 		download, err := a.askYesNo(fmt.Sprintf("Download %s?", item.Name), true)
 		if err != nil {
 			return nil, err
@@ -884,6 +912,16 @@ func (a *app) configureLaunchINI(targetRoot string) error {
 	}
 
 	fmt.Println("DLC, XBLA, and extra content usually need these launch.ini patch settings enabled.")
+	if a.useRecommended {
+		fmt.Println("Using recommended launch.ini patch settings: contpatch, xblapatch, and licpatch enabled.")
+		return updateLaunchINI(filepath.Join(targetRoot, "launch.ini"), launchINISettings{
+			AuroraPath: auroraPath,
+			ContPatch:  true,
+			XBLAPatch:  true,
+			LicPatch:   true,
+		})
+	}
+
 	contPatch, err := a.askYesNo("Enable contpatch for add-on content? (recommended)", true)
 	if err != nil {
 		return err

@@ -77,6 +77,30 @@ func TestUpdateLaunchINIWritesDashLaunchSettings(t *testing.T) {
 	}
 }
 
+func TestRecommendedFlagSelectsRecommendedDefaultApp(t *testing.T) {
+	a := &app{useRecommended: true}
+
+	selected, err := a.defaultApp("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected != "XeUnshackle" {
+		t.Fatalf("unexpected default app: %q", selected)
+	}
+}
+
+func TestRecommendedFlagSelectsRecommendedInstallMode(t *testing.T) {
+	a := &app{useRecommended: true}
+
+	selected, err := a.installMode("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected != modeABadAvatar {
+		t.Fatalf("unexpected install mode: %q", selected)
+	}
+}
+
 func writeTestFile(t *testing.T, path string, contents string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
